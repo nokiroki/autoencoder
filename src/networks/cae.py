@@ -79,10 +79,7 @@ class Conv1dAutoEncoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x = batch
-        # print(x.shape)
-        # print(gts.shape)
         latent = self(x)
-        # print(latent.shape)
         loss = torch.nn.MSELoss()(self.decoder(latent), x)
 
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -112,19 +109,19 @@ class Conv1dAutoEncoder(pl.LightningModule):
         pass
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.003)
+        optimizer = torch.optim.Adam(self.parameters(), lr=.003)
 
         def adjust_lr(epoch):
-            if epoch < 100:
-                return 0.003
-            if 100 <= epoch < 120:
-                return 0.0003
-            if 120 <= epoch < 150:
-                return 0.000003
-            if 150 <= epoch < 200:
-                return 0.0000003
+            if epoch < 10:
+                return 3e-3
+            if 10 <= epoch < 20:
+                return 1e-3
+            if 20 <= epoch < 50:
+                return 3e-4
+            if 50 <= epoch < 100:
+                return 3e-5
             else:
-                return 0.00000003
+                return 3e-6
 
         lr_scheduler = {
             "scheduler": torch.optim.lr_scheduler.LambdaLR(

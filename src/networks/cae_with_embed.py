@@ -1,5 +1,3 @@
-__all__ = ["Conv1dAutoEncoder"]
-
 import time
 
 import pytorch_lightning as pl
@@ -16,11 +14,7 @@ def init_weights(m):
         m.bias.data.fill_(0.01)
 
 
-class Conv1dAutoEncoder(pl.LightningModule):
-    """
-    Main block of convolutional event clustering
-    encoder-decoder architecture allows to create representation of Cohortney features
-    """
+class Conv1dEmbedAutoEncoder(pl.LightningModule):
 
     def __init__(
         self,
@@ -69,7 +63,7 @@ class Conv1dAutoEncoder(pl.LightningModule):
             nn.BatchNorm1d(512),
             nn.Dropout(dropout),
             nn.ConvTranspose1d(in_channels=512, out_channels=in_channels + embed_dim - 1, kernel_size=3),
-            nn.Conv1d(in_channels=in_channels + embed_dim - 1, out_channels=in_channels, kernel_size=1)
+            nn.Conv1d(in_channels=in_channels + embed_dim - 1, out_channels=in_channels - 1, kernel_size=1)
         )
         self.decoder.apply(init_weights)
 
@@ -78,27 +72,28 @@ class Conv1dAutoEncoder(pl.LightningModule):
         self.final_labels = None
         self.time_start = time.time()
 
-    def forward(self, x):
+    def forward(self, x, c):
 
-        x, c = torch.split(x, [3, 1], 2)
-
+        # print(x.shape)
         c = self.small_group_embed(c)
-        x = torch.cat((x, c), 2)
+        c = c.permute(0, 2, 1)
+        x = torch.cat((x, c), 1)
 
         latent = self.encoder(x)
         return latent
 
-    def predict_step(self, x):
-        latent = self(x)
+    def predict_step(self, x, c):
+        latent = self(x, c)
         loss = torch.nn.MSELoss()(self.decoder(latent), x)
         return {'latent': latent, 'loss': loss}
 
     def training_step(self, batch, batch_idx):
-        x = batch
+        x, c = batch
         # print(x.shape)
         # print(gts.shape)
-        latent = self(x)
+        latent = self(x, c)
         # print(latent.shape)
+        # x_all = torch.concat((x, c.unsqueeze(1)), 1)
         loss = torch.nn.MSELoss()(self.decoder(latent), x)
 
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -108,8 +103,9 @@ class Conv1dAutoEncoder(pl.LightningModule):
         self.log("train_time", time.time() - self.time_start, prog_bar=False)
 
     def validation_step(self, batch, batch_idx):
-        x = batch
-        latent = self(x)
+        x, c = batch
+        latent = self(x, c)
+        # x_all = torch.concat((x, c.unsqueeze(1)), 1)
         loss = torch.nn.MSELoss()(self.decoder(latent), x)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss}
@@ -118,8 +114,9 @@ class Conv1dAutoEncoder(pl.LightningModule):
         pass
 
     def test_step(self, batch, batch_idx: int):
-        x = batch
-        latent = self(x)
+        x, c = batch
+        latent = self(x, c)
+        # x_all = torch.concat((x, c.unsqueeze(1)), 1)
         loss = torch.nn.MSELoss()(self.decoder(latent), x)
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss, "latent": latent}
@@ -131,16 +128,16 @@ class Conv1dAutoEncoder(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.003)
 
         def adjust_lr(epoch):
-            if epoch < 100:
-                return 0.003
-            if 100 <= epoch < 120:
-                return 0.0003
-            if 120 <= epoch < 150:
-                return 0.000003
-            if 150 <= epoch < 200:
-                return 0.0000003
+            if epoch < 10:
+                return 3e-3
+            if 10 <= epoch < 20:
+                return 1e-3
+            if 20 <= epoch < 50:
+                return 3e-4
+            if 50 <= epoch < 100:
+                return 3e-5
             else:
-                return 0.00000003
+                return 3e-6
 
         lr_scheduler = {
             "scheduler": torch.optim.lr_scheduler.LambdaLR(
